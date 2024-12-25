@@ -907,4 +907,166 @@ function addSequenceMapping() {
   } catch (e) {
     showMessage('添加序列映射失败：' + e.message, 'error');
   }
-} 
+}
+
+// 配置备份管理
+const backupManager = {
+  maxBackups: 5,
+  backupKey: 'keyMapperConfigBackups',
+
+  async saveBackup(config) {
+    try {
+      const timestamp = new Date().toISOString();
+      const backup = {
+        timestamp,
+        config: deepClone(config)
+      };
+
+      let backups = await this.getBackups();
+      backups.unshift(backup);
+      
+      // 保留最近的备份
+      if (backups.length > this.maxBackups) {
+        backups = backups.slice(0, this.maxBackups);
+      }
+
+      await chrome.storage.local.set({ [this.backupKey]: backups });
+      return true;
+    } catch (e) {
+      console.error('保存备份失败:', e);
+      return false;
+    }
+  },
+
+  async getBackups() {
+    try {
+      const result = await chrome.storage.local.get([this.backupKey]);
+      return result[this.backupKey] || [];
+    } catch (e) {
+      console.error('获取备份失败:', e);
+      return [];
+    }
+  },
+
+  async restoreBackup(index) {
+    try {
+      const backups = await this.getBackups();
+      if (index >= 0 && index < backups.length) {
+        const backup = backups[index];
+        currentConfig = deepClone(backup.config);
+        await saveSettings();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('恢复备份失败:', e);
+      return false;
+    }
+  }
+};
+
+// 导出配置
+async function exportConfig() {
+  try {
+    const configToExport = deepClone(currentConfig);
+    const blob = new Blob([JSON.stringify(configToExport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `key-mapper-config-${timestamp}.json`;
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showMessage('配置已导出', 'success');
+  } catch (e) {
+    handleError(new AppError(ErrorTypes.BACKUP_ERROR, '导出配置失败'), '导出失败');
+  }
+}
+
+// 导入配置
+async function importConfig(file) {
+  try {
+    const reader = new FileReader();
+    
+    reader.onload = async (event) => {
+      try {
+        const importedConfig = JSON.parse(event.target.result);
+        
+        // 验证导入的配置
+        validateConfig(importedConfig);
+        
+        // 备份当前配置
+        const backupSuccess = await backupManager.saveBackup(currentConfig);
+        if (!backupSuccess) {
+          throw new AppError(ErrorTypes.BACKUP_ERROR, '备份当前配置失败');
+        }
+        
+        // 更新配置
+        currentConfig = deepClone(importedConfig);
+        await saveSettings();
+        
+        // 重新渲染
+        renderWebsites();
+        renderMappings();
+        
+        showMessage('配置已导入并生效', 'success');
+      } catch (e) {
+        handleError(e, '导入配置失败');
+      }
+    };
+    
+    reader.onerror = () => {
+      handleError(new AppError(ErrorTypes.RESTORE_ERROR, '读取文件失败'), '导入失败');
+    };
+    
+    reader.readAsText(file);
+  } catch (e) {
+    handleError(e, '导入配置失败');
+  }
+}
+
+// 设置导入导出相关的事件监听器
+document.addEventListener('DOMContentLoaded', () => {
+  // ... existing code ...
+  
+  // 导出按钮
+  const exportButton = document.getElementById('export-config');
+  exportButton.addEventListener('click', exportConfig);
+  
+  // 导入按钮和文件输入
+  const importButton = document.getElementById('import-config');
+  const fileInput = document.getElementById('config-file-input');
+  
+  importButton.addEventListener('click', () => {
+    if (configModified) {
+      if (!confirm('当前有未保存的更改，是否继续导入？这将丢失未保存的更改。')) {
+        return;
+      }
+    }
+    fileInput.click();
+  });
+  
+  fileInput.addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
+      showMessage('请选择JSON格式的配置文件', 'error');
+      return;
+    }
+    
+    if (!confirm('导入新配置将完全替换现有配置。系统已自动备份当前配置，您可以随时恢复。是否继续？')) {
+      fileInput.value = '';
+      return;
+    }
+    
+    await importConfig(file);
+    fileInput.value = ''; // 重置文件输入
+  });
+});

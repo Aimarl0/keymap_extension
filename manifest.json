@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Key Mapper",
-  "version": "1.71",
+  "version": "1.80",
   "description": "将特定网站的快捷键重新映射",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "downloads"
   ],
   "options_ui": {
     "page": "options.html",
