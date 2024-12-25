@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Key Mapper",
+  "version": "1.71",
+  "description": "将特定网站的快捷键重新映射",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+} 
